@@ -8,7 +8,6 @@ pub struct Config {
 #[derive(Deserialize)]
 pub struct EmailConfig {
     pub to_address: String,
-    pub from_address: String,
     pub smtp_username: String,
     pub smtp_password: String,
     pub smtp_server: String,
