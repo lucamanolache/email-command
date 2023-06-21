@@ -13,3 +13,6 @@ teloxide = "0.12.2"
 lettre = { version="0.10.4", features=["smtp-transport", "tokio1", "tokio1-native-tls", "builder"] }
 log = "0.4.19"
 pretty_env_logger = "0.5.0"
+thiserror = "1.0.40"
+async-trait = "0.1.68"
+anyerror = "0.1.8"

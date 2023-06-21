@@ -1,10 +1,13 @@
 use std::fs;
 use std::process::Command;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
+use backends::backend::Backend;
+use backends::smtp_email_backend::SmtpEmailBackend;
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::{AsyncSmtpTransport, Message};
 use lettre::{AsyncTransport, Tokio1Executor};
+
 use tokio;
 
 use log::trace;
@@ -14,6 +17,24 @@ use crate::config::Config;
 mod backends;
 mod config;
 
+pub struct CommandInfo {
+    pub time: Duration,
+    pub command: String,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+impl CommandInfo {
+    fn new(command: String, time: Duration, stdout: String, stderr: String) -> Self {
+        Self {
+            time,
+            command,
+            stdout,
+            stderr,
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     pretty_env_logger::init();
@@ -21,8 +42,8 @@ async fn main() {
     let config: Config = toml::from_str(&fs::read_to_string("./config.toml").unwrap()).unwrap();
 
     let start = SystemTime::now();
-    let command = "ls";
-    let output = Command::new("sh")
+    let command = "ll";
+    let output = Command::new(command)
         .arg("-c")
         .arg(command)
         .output()
@@ -31,30 +52,11 @@ async fn main() {
     let stdout = String::from_utf8(output.stdout).unwrap();
     let stderr = String::from_utf8(output.stderr).unwrap();
 
-    let email = Message::builder()
-        .from(config.email.smtp_username.parse().unwrap())
-        .to(config.email.to_address.parse().unwrap())
-        .subject(format!(
-            "Command {} finished in {}",
-            command,
-            start.elapsed().unwrap().as_secs_f64()
-        ))
-        .body(format!("STDOUT:\n{}\n\nSTDERR:\n{}", stdout, stderr).to_owned())
-        .unwrap();
+    let backend: Box<dyn Backend> = Box::new(SmtpEmailBackend::new(config.email));
 
-    let creds = Credentials::new(
-        config.email.smtp_username.to_owned(),
-        config.email.smtp_password.to_owned(),
-    );
+    let info = CommandInfo::new(command.to_owned(), start.elapsed().unwrap(), stdout, stderr);
 
-    let mailer = AsyncSmtpTransport::<Tokio1Executor>::relay(&config.email.smtp_server)
-        .unwrap()
-        .credentials(creds)
-        .build();
-
-    trace!("a trace example");
-    let result = mailer.send(email).await;
-    match result {
+    match backend.send_text(&info).await {
         Ok(_) => println!("email sent"),
         Err(err) => println!("failed to send email alert: {}", err),
     }
