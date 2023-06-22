@@ -6,12 +6,14 @@ use crate::CommandInfo;
 
 #[derive(Error, Debug)]
 pub enum BackendError {
-    #[error("Failed to send notification")]
-    SendError,
-    #[error("Failed to recieve reply")]
-    RecieveError,
-    #[error("Unknown error")]
-    Unknown,
+    #[error("Initilization error: {0}")]
+    InitilizationError(String),
+    #[error("Authorization error")]
+    AuthorizationError,
+    #[error("Server error: {0}")]
+    ServerError(String),
+    #[error("Error {0}")]
+    Unknown(String),
 }
 
 pub enum BackendCommand {
