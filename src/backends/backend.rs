@@ -8,9 +8,9 @@ use crate::CommandInfo;
 pub enum BackendError {
     #[error("Failed to send notification")]
     SendError,
-    #[error("Command read error")]
-    Redaction(String),
-    #[error("unknown data store error")]
+    #[error("Failed to recieve reply")]
+    RecieveError,
+    #[error("Unknown error")]
     Unknown,
 }
 
@@ -20,6 +20,6 @@ pub enum BackendCommand {
 
 #[async_trait]
 pub trait Backend {
-    async fn send_text(&self, info: &CommandInfo) -> Result<(), BackendError>;
-    async fn recieve(&self) -> Result<BackendCommand, BackendError>;
+    async fn send_text(&mut self, info: &CommandInfo) -> Result<(), BackendError>;
+    async fn recieve(&mut self) -> Result<BackendCommand, BackendError>;
 }

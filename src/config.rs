@@ -7,8 +7,10 @@ pub struct Config {
 
 #[derive(Deserialize)]
 pub struct EmailConfig {
-    pub to_address: String,
-    pub smtp_username: String,
-    pub smtp_password: String,
+    pub address: String,
+    pub username: String,
+    pub password: String,
     pub smtp_server: String,
+    pub pop_server: String,
+    pub pop_port: u16,
 }
