@@ -8,8 +8,8 @@ use crate::CommandInfo;
 pub enum BackendError {
     #[error("Initilization error: {0}")]
     InitilizationError(String),
-    #[error("Authorization error")]
-    AuthorizationError,
+    #[error("Authorization error: {0}")]
+    AuthorizationError(String),
     #[error("Server error: {0}")]
     ServerError(String),
     #[error("Error {0}")]

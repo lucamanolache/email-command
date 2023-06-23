@@ -11,6 +11,6 @@ pub struct EmailConfig {
     pub username: String,
     pub password: String,
     pub smtp_server: String,
-    pub pop_server: String,
-    pub pop_port: u16,
+    pub imap_server: String,
+    pub imap_port: u16,
 }

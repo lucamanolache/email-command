@@ -1,12 +1,21 @@
 use std::time::Duration;
 
+use async_imap::{
+    error,
+    types::{Fetch, Seq},
+    Session,
+};
+use async_native_tls;
+use async_native_tls::TlsStream;
 use async_trait::async_trait;
+use futures_util::TryStreamExt;
 use lettre::{
     transport::smtp::authentication::Credentials, AsyncSmtpTransport, AsyncTransport, Message,
     Tokio1Executor,
 };
 use log::*;
-use rust_pop3_client::Pop3Connection;
+use regex::Regex;
+use tokio::net::TcpStream;
 use tokio::time::sleep;
 
 use crate::{config::EmailConfig, CommandInfo};
@@ -16,16 +25,19 @@ use super::backend::{Backend, BackendCommand, BackendError};
 pub struct SmtpEmailBackend {
     config: EmailConfig,
     smtp: AsyncSmtpTransport<Tokio1Executor>,
-    pop: Pop3Connection,
+    imap: Session<TlsStream<TcpStream>>,
 }
 
 impl SmtpEmailBackend {
-    pub fn new(config: EmailConfig) -> Result<Self, BackendError> {
+    pub async fn new(config: EmailConfig) -> Result<Self, BackendError> {
+        // Create the smtp client
         let creds = Credentials::new(config.username.to_owned(), config.password.to_owned());
 
-        trace!("Creating smtp client (server {})", config.smtp_server);
-        let mut smtp = match AsyncSmtpTransport::<Tokio1Executor>::relay(&config.smtp_server) {
-            Ok(smtp) => smtp,
+        let smtp = match AsyncSmtpTransport::<Tokio1Executor>::relay(&config.smtp_server) {
+            Ok(smtp) => {
+                debug!("Created smtp client (server {})", config.smtp_server);
+                smtp
+            }
             Err(err) => {
                 return Err(BackendError::InitilizationError(format!(
                     "Failed to initilize smtp with:\n{}",
@@ -35,81 +47,124 @@ impl SmtpEmailBackend {
         };
         let smtp = smtp.credentials(creds).build();
 
-        trace!(
-            "Creating pop3 client (server: {}, port: {})",
-            config.pop_server,
-            config.pop_port
-        );
-        let mut pop = match Pop3Connection::new(&config.pop_server, config.pop_port) {
-            Ok(pop) => pop,
-            Err(err) => return Err(BackendError::InitilizationError(err.to_string())),
-        };
-        match pop.login(&config.username, &config.password) {
-            Ok(_) => trace!("pop3 login sucessful"),
-            Err(_) => return Err(BackendError::AuthorizationError),
-        };
-
-        let infos = match pop.list() {
-            Ok(infos) => infos,
-            Err(err) => {
-                return Err(BackendError::ServerError(format!(
-                    "Failed getting pop3 list of emails with:\n{}",
-                    err.to_string()
-                )))
-            }
-        };
-        for info in infos {
-            info!("Cleaning message {}", info.message_id);
-            match pop.delete(info.message_id) {
-                Ok(_) => info!("Cleaned message {}", info.message_id),
+        // Create the imap client
+        let tcp_stream =
+            match TcpStream::connect((config.imap_server.as_str(), config.imap_port)).await {
+                Ok(stream) => {
+                    debug!(
+                        "Set up tcp connection with {}:{}",
+                        config.imap_server, config.imap_port
+                    );
+                    stream
+                }
                 Err(err) => {
                     return Err(BackendError::ServerError(format!(
-                        "Failed to delete message {} with:\n{}",
-                        info.message_id,
+                        "Failed to connect to {}:{} with:\n{}",
+                        config.imap_server,
+                        config.imap_port,
                         err.to_string()
                     )))
                 }
             };
+        let tls = async_native_tls::TlsConnector::new();
+        let tls_stream = match tls.connect(&config.imap_server, tcp_stream).await {
+            Ok(stream) => {
+                debug!(
+                    "Set up tls connection with {}:{}",
+                    config.imap_server, config.imap_port
+                );
+                stream
+            }
+            Err(err) => {
+                return Err(BackendError::ServerError(format!(
+                    "Failed to connect with tls to {}:{} with:\n{}",
+                    config.imap_server,
+                    config.imap_port,
+                    err.to_string()
+                )))
+            }
+        };
+        let client = async_imap::Client::new(tls_stream);
+        let mut imap = match client.login(&config.username, &config.password).await {
+            Ok(session) => {
+                debug!("Created imap session");
+                session
+            }
+            Err(_) => {
+                return Err(BackendError::AuthorizationError(
+                    "Failed to set up imap".to_owned(),
+                ))
+            }
+        };
+
+        // Remove old messages
+        imap.select("INBOX").await.unwrap();
+        let old = imap
+            .search(format!("FROM {}", config.address))
+            .await
+            .unwrap();
+
+        for msg in old {
+            delete_message(msg, &mut imap).await.unwrap();
         }
 
-        Ok(SmtpEmailBackend { config, smtp, pop })
+        Ok(SmtpEmailBackend { config, smtp, imap })
     }
 }
 
 #[async_trait]
 impl Backend for SmtpEmailBackend {
     async fn recieve(&mut self) -> Result<BackendCommand, BackendError> {
-        let infos = loop {
-            let infos = match self.pop.list() {
-                Ok(infos) => infos,
-                Err(err) => {
-                    return Err(BackendError::ServerError(format!(
-                        "Failed getting pop3 list of emails with:\n{}",
-                        err.to_string()
-                    )))
-                }
-            };
-            if infos.len() > 0 {
-                debug!("{} messages found, proceeding to download", infos.len());
-                break infos;
+        let messages = loop {
+            let new = self
+                .imap
+                .search(format!("FROM {}", self.config.address))
+                .await
+                .unwrap();
+
+            if !new.is_empty() {
+                info!("Got message");
+                break new;
             }
-            trace!("No messages yet, going to sleep");
+
+            debug!("No messages yet, going to sleep");
             sleep(Duration::from_secs(10)).await;
         };
 
-        for info in infos {
-            let mut buf = Vec::new();
-            match self.pop.retrieve(info.message_id, &mut buf) {
-                Ok(_) => info!("Retrieved email {}", info.message_id),
-                Err(err) => {
-                    return Err(BackendError::ServerError(format!(
-                        "Failed to retrieve email {} with:\n{}",
-                        info.message_id,
-                        err.to_string()
-                    )))
-                }
-            };
-            println!("{:?}", buf);
+        let msg: Vec<Fetch> = self
+            .imap
+            .fetch(messages.iter().next().unwrap().to_string(), "body[]")
+            .await
+            .expect("FAILED HERE")
+            .try_collect()
+            .await
+            .expect("FAILED SECOND ONE");
+        let mut msg = msg.iter();
+
+        while let Some(msg) = msg.next() {
+            let msg = mail_parser::Message::parse(msg.body().unwrap()).unwrap();
+            let body = msg.body_text(0).unwrap();
+
+            println!("{}", body);
+            let regex = Regex::new(r"^On.+ at .+wrote:").unwrap();
+            let body: Vec<&str> = body
+                .split("\n")
+                .filter(|line| line.len() > 0)
+                .filter(|line| !line.starts_with('>'))
+                .filter(|line| !regex.is_match(&line))
+                .collect();
+            if body.len() != 1 {
+                panic!("Bad length")
+            }
+            let command = body[0];
+            self.send_text(&CommandInfo::new(
+                command.to_owned(),
+                Duration::ZERO,
+                "".to_owned(),
+                "".to_owned(),
+            ))
+            .await
+            .unwrap();
         }
 
         Ok(BackendCommand::Done)
@@ -151,4 +206,17 @@ impl Backend for SmtpEmailBackend {
             Err(_) => Err(BackendError::ServerError("Failed to send email".into())),
         }
     }
+}
+
+async fn delete_message(
+    seq: Seq,
+    session: &mut Session<TlsStream<TcpStream>>,
+) -> error::Result<()> {
+    let updates_stream = session
+        .store(format!("{}", seq), "+FLAGS (\\Deleted)")
+        .await?;
+    let _updates: Vec<_> = updates_stream.try_collect().await?;
+    session.expunge().await?;
+    info!("Deleted message {}", seq);
+    Ok(())
 }

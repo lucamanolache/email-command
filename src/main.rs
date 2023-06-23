@@ -1,3 +1,4 @@
+use execute::{shell, Execute};
 use std::fs;
 use std::process::Command;
 use std::time::{Duration, SystemTime};
@@ -6,7 +7,6 @@ use backends::backend::Backend;
 use backends::smtp_email_backend::SmtpEmailBackend;
 
 use tokio;
-use tokio::time::sleep;
 
 use crate::config::Config;
 
@@ -35,22 +35,23 @@ impl CommandInfo {
 async fn main() {
     pretty_env_logger::init();
 
-    let config: Config = toml::from_str(&fs::read_to_string("./config.toml").unwrap()).unwrap();
+    let config = fs::read_to_string("./config.toml").expect("Failed to open config");
+    let config: Config = toml::from_str(&config).expect("Failed to parse config");
 
     let start = SystemTime::now();
     let command = "ll";
-    let output = Command::new("zsh")
-        .arg("-c")
-        .arg(&command)
-        .output()
-        .expect("failed to execute process");
 
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    let stderr = String::from_utf8(output.stderr).unwrap();
+    let output = shell("ls").output().expect("failed to execute process");
 
-    let mut backend: Box<dyn Backend> = Box::new(SmtpEmailBackend::new(config.email));
+    let stdout = String::from_utf8(output.stdout).expect("Failed to parse stdout");
+    let stderr = String::from_utf8(output.stderr).expect("Failed to parse stderr");
 
-    // let info = CommandInfo::new(command.to_owned(), start.elapsed().unwrap(), stdout, stderr);
+    println!("{}\n{}", stdout, stderr);
+
+    let mut backend: Box<dyn Backend> =
+        Box::new(SmtpEmailBackend::new(config.email).await.unwrap());
+
+    let info = CommandInfo::new(command.to_owned(), start.elapsed().unwrap(), stdout, stderr);
 
     // match backend.send_text(&info).await {
     //     Ok(_) => println!("email sent"),
