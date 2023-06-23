@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{default, time::Duration};
 
 use async_imap::{
     error,
@@ -60,9 +60,7 @@ impl SmtpEmailBackend {
                 Err(err) => {
                     return Err(BackendError::ServerError(format!(
                         "Failed to connect to {}:{} with:\n{}",
-                        config.imap_server,
-                        config.imap_port,
-                        err
+                        config.imap_server, config.imap_port, err
                     )))
                 }
             };
@@ -78,9 +76,7 @@ impl SmtpEmailBackend {
             Err(err) => {
                 return Err(BackendError::ServerError(format!(
                     "Failed to connect with tls to {}:{} with:\n{}",
-                    config.imap_server,
-                    config.imap_port,
-                    err
+                    config.imap_server, config.imap_port, err
                 )))
             }
         };
@@ -98,14 +94,32 @@ impl SmtpEmailBackend {
         };
 
         // Remove old messages
-        imap.select("INBOX").await.unwrap();
-        let old = imap
-            .search(format!("FROM {}", config.address))
-            .await
-            .unwrap();
+        match imap.select("INBOX").await {
+            Ok(_) => trace!("Set mailbox to INBOX"),
+            Err(e) => {
+                return Err(BackendError::ServerError(format!(
+                    "Failed to set mailbox to INBOX with:\n{}",
+                    e.to_string()
+                )))
+            }
+        };
+        // Return error if fails to search for messages, as its likely it won't be able to later
+        let old = match imap.search(format!("FROM {}", config.address)).await {
+            Ok(old) => old,
+            Err(e) => {
+                return Err(BackendError::ServerError(format!(
+                    "Failed to search INBOX with \"FROM {}\" with:\n{}",
+                    config.address,
+                    e.to_string()
+                )))
+            }
+        };
 
         for msg in old {
-            delete_message(msg, &mut imap).await.unwrap();
+            match delete_message(msg, &mut imap).await {
+                Err(e) => error!("Failed to delete message {} with:\n{}", msg, e.to_string()),
+                Ok(_) => {}
+            };
         }
 
         Ok(SmtpEmailBackend { config, smtp, imap })
@@ -119,8 +133,17 @@ impl Backend for SmtpEmailBackend {
             let new = self
                 .imap
                 .search(format!("FROM {}", self.config.address))
-                .await
-                .unwrap();
+                .await;
+
+            let new = match new {
+                Ok(new) => new,
+                Err(e) => {
+                    error!("Failed to search for message");
+                    error!("Retrying in 10 seconds");
+                    sleep(Duration::from_secs(10)).await;
+                    continue;
+                }
+            };
 
             if !new.is_empty() {
                 info!("Got message");
@@ -131,22 +154,56 @@ impl Backend for SmtpEmailBackend {
             sleep(Duration::from_secs(10)).await;
         };
 
-        let msg: Vec<Fetch> = self
-            .imap
-            .fetch(messages.iter().next().unwrap().to_string(), "body[]")
-            .await
-            .expect("FAILED HERE")
-            .try_collect()
-            .await
-            .expect("FAILED SECOND ONE");
-        let mut msg = msg.iter();
+        let msg = messages
+            .iter()
+            .next()
+            .expect("Impossible case happened")
+            .to_string();
+        let msg = match self.imap.fetch(&msg, "body[]").await {
+            Ok(msg) => msg,
+            Err(e) => {
+                return Err(BackendError::ServerError(format!(
+                    "Failed to fetch email {}'s body with:\n{}",
+                    msg,
+                    e.to_string()
+                )))
+            }
+        };
+        let msg: Vec<Fetch> = match msg.try_collect().await {
+            Ok(msg) => msg,
+            Err(e) => {
+                return Err(BackendError::Unknown(format!(
+                    "Failed to collect messages with:\n{}",
+                    e.to_string()
+                )))
+            }
+        };
 
-        for msg in msg {
-            let msg = mail_parser::Message::parse(msg.body().unwrap()).unwrap();
-            let body = msg.body_text(0).unwrap();
+        for msg in msg.iter() {
+            let msg = match msg.body() {
+                Some(msg) => msg,
+                None => {
+                    return Err(BackendError::Unknown(
+                        "Failed to get email body with".to_string(),
+                    ))
+                }
+            };
+            let msg = match mail_parser::Message::parse(msg) {
+                Some(msg) => msg,
+                None => return Err(BackendError::Unknown("Failed to parse email".to_string())),
+            };
+            let body = match msg.body_text(0) {
+                Some(body) => body,
+                None => {
+                    return Err(BackendError::Unknown(
+                        "Failed to parse email body".to_string(),
+                    ))
+                }
+            };
 
-            println!("{}", body);
-            let regex = Regex::new(r"^On.+ at .+wrote:").unwrap();
+            trace!("Body:\n{}", body);
+            let regex =
+                Regex::new(r"^On.+ at .+wrote:").expect("Impossible error, failed to parse regex");
             let body: Vec<&str> = body
                 .split('\n')
                 .filter(|line| !line.is_empty())
@@ -157,17 +214,15 @@ impl Backend for SmtpEmailBackend {
                 panic!("Bad length")
             }
             let command = body[0];
-            self.send_text(&CommandInfo::new(
-                command.to_owned(),
-                Duration::ZERO,
-                "".to_owned(),
-                "".to_owned(),
-            ))
-            .await
-            .unwrap();
+            return match command.to_ascii_lowercase().as_str() {
+                "rerun" => Ok(BackendCommand::Rerun),
+                "done" => Ok(BackendCommand::Done),
+                _ => Ok(BackendCommand::UnkownCommand(command.to_owned())),
+            };
         }
-
-        Ok(BackendCommand::Done)
+        Ok(BackendCommand::UnkownCommand(
+            "Could not find command".to_owned(),
+        ))
     }
 
     async fn send_text(&mut self, info: &CommandInfo) -> Result<(), BackendError> {
@@ -195,7 +250,10 @@ impl Backend for SmtpEmailBackend {
                 info.command,
                 info.time.as_secs_f64()
             ))
-            .body(format!("STDOUT:\n{}\n\nSTDERR:\n{}", info.stdout, info.stderr));
+            .body(format!(
+                "STDOUT:\n{}\n\nSTDERR:\n{}",
+                info.stdout, info.stderr
+            ));
         let email = match email {
             Ok(email) => email,
             Err(_) => return Err(BackendError::Unknown("Failed to generate email".into())),

@@ -17,7 +17,9 @@ pub enum BackendError {
 }
 
 pub enum BackendCommand {
+    Rerun,
     Done,
+    UnkownCommand(String),
 }
 
 #[async_trait]
