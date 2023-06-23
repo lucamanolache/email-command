@@ -41,7 +41,7 @@ impl SmtpEmailBackend {
             Err(err) => {
                 return Err(BackendError::InitilizationError(format!(
                     "Failed to initilize smtp with:\n{}",
-                    err.to_string()
+                    err
                 )))
             }
         };
@@ -62,7 +62,7 @@ impl SmtpEmailBackend {
                         "Failed to connect to {}:{} with:\n{}",
                         config.imap_server,
                         config.imap_port,
-                        err.to_string()
+                        err
                     )))
                 }
             };
@@ -80,7 +80,7 @@ impl SmtpEmailBackend {
                     "Failed to connect with tls to {}:{} with:\n{}",
                     config.imap_server,
                     config.imap_port,
-                    err.to_string()
+                    err
                 )))
             }
         };
@@ -141,17 +141,17 @@ impl Backend for SmtpEmailBackend {
             .expect("FAILED SECOND ONE");
         let mut msg = msg.iter();
 
-        while let Some(msg) = msg.next() {
+        for msg in msg {
             let msg = mail_parser::Message::parse(msg.body().unwrap()).unwrap();
             let body = msg.body_text(0).unwrap();
 
             println!("{}", body);
             let regex = Regex::new(r"^On.+ at .+wrote:").unwrap();
             let body: Vec<&str> = body
-                .split("\n")
-                .filter(|line| line.len() > 0)
+                .split('\n')
+                .filter(|line| !line.is_empty())
                 .filter(|line| !line.starts_with('>'))
-                .filter(|line| !regex.is_match(&line))
+                .filter(|line| !regex.is_match(line))
                 .collect();
             if body.len() != 1 {
                 panic!("Bad length")
@@ -195,7 +195,7 @@ impl Backend for SmtpEmailBackend {
                 info.command,
                 info.time.as_secs_f64()
             ))
-            .body(format!("STDOUT:\n{}\n\nSTDERR:\n{}", info.stdout, info.stderr).to_owned());
+            .body(format!("STDOUT:\n{}\n\nSTDERR:\n{}", info.stdout, info.stderr));
         let email = match email {
             Ok(email) => email,
             Err(_) => return Err(BackendError::Unknown("Failed to generate email".into())),

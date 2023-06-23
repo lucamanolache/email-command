@@ -1,12 +1,10 @@
-use execute::{shell, Execute};
+use execute::shell;
 use std::fs;
-use std::process::Command;
+
 use std::time::{Duration, SystemTime};
 
 use backends::backend::Backend;
 use backends::smtp_email_backend::SmtpEmailBackend;
-
-use tokio;
 
 use crate::config::Config;
 
@@ -51,7 +49,7 @@ async fn main() {
     let mut backend: Box<dyn Backend> =
         Box::new(SmtpEmailBackend::new(config.email).await.unwrap());
 
-    let info = CommandInfo::new(command.to_owned(), start.elapsed().unwrap(), stdout, stderr);
+    // let info = CommandInfo::new(command.to_owned(), start.elapsed().unwrap(), stdout, stderr);
 
     // match backend.send_text(&info).await {
     //     Ok(_) => println!("email sent"),
