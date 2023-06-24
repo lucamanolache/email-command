@@ -33,7 +33,7 @@ impl CommandInfo {
     }
 }
 
-pub fn run(command: String) -> Result<CommandInfo, RunnerError> {
+pub fn run(command: &String) -> Result<CommandInfo, RunnerError> {
     let start = SystemTime::now();
 
     let mut binding = shell(&command);

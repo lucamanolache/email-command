@@ -2,7 +2,8 @@ use serde::Deserialize;
 
 #[derive(Deserialize)]
 pub struct Config {
-    pub email: EmailConfig,
+    pub email: Option<EmailConfig>,
+    pub matrix: Option<MatrixConfig>,
 }
 
 #[derive(Deserialize)]
@@ -13,4 +14,10 @@ pub struct EmailConfig {
     pub smtp_server: String,
     pub imap_server: String,
     pub imap_port: u16,
+}
+
+#[derive(Deserialize)]
+pub struct MatrixConfig {
+    pub token: String,
+    pub address: String,
 }

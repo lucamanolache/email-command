@@ -23,3 +23,4 @@ futures-util = "0.3.28"
 mail-parser = "0.8.2"
 regex = "1.8.4"
 crossbeam = "0.8.2"
+clap = { version="4.3.8", features=["derive"] }
