@@ -18,9 +18,9 @@ use regex::Regex;
 use tokio::net::TcpStream;
 use tokio::time::sleep;
 
-use crate::{config::EmailConfig, CommandInfo};
-
 use super::backend::{Backend, BackendCommand, BackendError};
+use crate::config::EmailConfig;
+use crate::runner::CommandInfo;
 
 pub struct SmtpEmailBackend {
     config: EmailConfig,
@@ -154,12 +154,9 @@ impl Backend for SmtpEmailBackend {
             sleep(Duration::from_secs(10)).await;
         };
 
-        let msg = messages
-            .iter()
-            .next()
-            .expect("Impossible case happened")
-            .to_string();
-        let msg = match self.imap.fetch(&msg, "body[]").await {
+        let msg_id = messages.iter().next().expect("Impossible case happened");
+        let msg = &msg_id.to_string();
+        let msg = match self.imap.fetch(msg, "body[]").await {
             Ok(msg) => msg,
             Err(e) => {
                 return Err(BackendError::ServerError(format!(
@@ -214,6 +211,7 @@ impl Backend for SmtpEmailBackend {
                 panic!("Bad length")
             }
             let command = body[0];
+            delete_message(*msg_id, &mut self.imap).await.unwrap();
             return match command.to_ascii_lowercase().as_str() {
                 "rerun" => Ok(BackendCommand::Rerun),
                 "done" => Ok(BackendCommand::Done),
