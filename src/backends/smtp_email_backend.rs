@@ -99,7 +99,7 @@ impl SmtpEmailBackend {
             Err(e) => {
                 return Err(BackendError::ServerError(format!(
                     "Failed to set mailbox to INBOX with:\n{}",
-                    e.to_string()
+                    e
                 )))
             }
         };
@@ -109,8 +109,7 @@ impl SmtpEmailBackend {
             Err(e) => {
                 return Err(BackendError::ServerError(format!(
                     "Failed to search INBOX with \"FROM {}\" with:\n{}",
-                    config.address,
-                    e.to_string()
+                    config.address, e
                 )))
             }
         };
@@ -137,7 +136,7 @@ impl Backend for SmtpEmailBackend {
 
             let new = match new {
                 Ok(new) => new,
-                Err(e) => {
+                Err(_) => {
                     error!("Failed to search for message");
                     error!("Retrying in 10 seconds");
                     sleep(Duration::from_secs(10)).await;
@@ -161,8 +160,7 @@ impl Backend for SmtpEmailBackend {
             Err(e) => {
                 return Err(BackendError::ServerError(format!(
                     "Failed to fetch email {}'s body with:\n{}",
-                    msg,
-                    e.to_string()
+                    msg, e
                 )))
             }
         };
@@ -171,7 +169,7 @@ impl Backend for SmtpEmailBackend {
             Err(e) => {
                 return Err(BackendError::Unknown(format!(
                     "Failed to collect messages with:\n{}",
-                    e.to_string()
+                    e
                 )))
             }
         };

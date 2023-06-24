@@ -36,7 +36,7 @@ impl CommandInfo {
 pub fn run(command: &String) -> Result<CommandInfo, RunnerError> {
     let start = SystemTime::now();
 
-    let mut binding = shell(&command);
+    let mut binding = shell(command);
     binding.stdout(Stdio::piped());
     let cmd = binding.stderr(Stdio::piped());
 
@@ -63,7 +63,7 @@ pub fn run(command: &String) -> Result<CommandInfo, RunnerError> {
             stderr_log
         });
 
-        let status = child.wait().expect("child wasn't running");
+        let _status = child.wait().expect("child wasn't running");
 
         let stdout_log = stdout_thread.join().expect("stdout thread panicked");
         let stderr_log = stderr_thread.join().expect("stderr thread panicked");
@@ -81,7 +81,7 @@ pub fn run(command: &String) -> Result<CommandInfo, RunnerError> {
         stderr,
     );
 
-    return Ok(info);
+    Ok(info)
 }
 
 struct TeeWriter<'a, W0: Write, W1: Write> {
