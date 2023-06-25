@@ -21,4 +21,5 @@ pub struct MatrixConfig {
     pub address: String,
     pub username: String,
     pub password: String,
+    pub room: String,
 }

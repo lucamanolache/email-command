@@ -1,7 +1,7 @@
 use std::{fmt::Display, str::FromStr};
 
 use async_trait::async_trait;
-
+use mime::Mime;
 use thiserror::Error;
 
 use crate::runner::CommandInfo;
@@ -27,15 +27,23 @@ impl Display for ParseError {
     }
 }
 
+pub enum Sendable {
+    Raw(String),
+    CommandInfo(CommandInfo),
+    Image((Mime, Vec<u8>)),
+}
+
+#[derive(PartialEq)]
 pub enum BackendCommand {
     Rerun,
     Done,
     UnkownCommand(String),
+    Cat,
 }
 
 #[async_trait]
 pub trait Backend {
-    async fn send_text(&mut self, info: &CommandInfo) -> Result<(), BackendError>;
+    async fn send_text(&mut self, info: &Sendable) -> Result<(), BackendError>;
     async fn recieve(&mut self) -> Result<BackendCommand, BackendError>;
 }
 

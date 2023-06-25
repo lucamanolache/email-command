@@ -24,5 +24,7 @@ mail-parser = "0.8.2"
 regex = "1.8.4"
 crossbeam = "0.8.2"
 clap = { version="4.3.8", features=["derive"] }
-matrix-sdk = "0.6.2"
+matrix-sdk = { version="0.6.2", features=["markdown"] }
 lazy_static = "1.4.0"
+serde_json = "*"
+mime = "0.3.17"

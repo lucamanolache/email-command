@@ -4,7 +4,7 @@ use std::fs;
 use std::time::Duration;
 use tokio::time::sleep;
 
-use backends::backend::{Backend, BackendCommand, BackendList};
+use backends::backend::{Backend, BackendCommand, BackendList, Sendable};
 use backends::smtp_email_backend::SmtpEmailBackend;
 
 use crate::config::Config;
@@ -45,6 +45,21 @@ async fn get_backend(backend: &BackendList, config: Config) -> Box<dyn Backend> 
     }
 }
 
+async fn send(backend: &mut dyn Backend, msg: &Sendable) {
+    match backend.send_text(msg).await {
+        Ok(_) => println!("Sent"),
+        Err(err) => {
+            eprintln!("Failed to send email with:\n{}", err);
+            println!("Trying again in 30s");
+            sleep(Duration::from_secs(30)).await;
+            match backend.send_text(msg).await {
+                Ok(_) => println!("Sent"),
+                Err(err) => panic!("Can't send results with:\n{}", err),
+            }
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     pretty_env_logger::init();
@@ -56,27 +71,37 @@ async fn main() {
 
     let mut backend = get_backend(&args.backend, config).await;
 
-    loop {
-        let info = run(&args.command).unwrap();
+    let mut command = BackendCommand::Rerun;
 
-        match backend.send_text(&info).await {
-            Ok(_) => println!("Sent"),
-            Err(err) => {
-                eprintln!("Failed to send email with:\n{}", err);
-                println!("Trying again in 30s");
-                sleep(Duration::from_secs(30)).await;
-                match backend.send_text(&info).await {
-                    Ok(_) => println!("Sent"),
-                    Err(err) => panic!("Can't send results with:\n{}", err),
-                }
-            }
+    let cat = fs::read("./cat.jpeg").expect("Can't open image file.");
+
+    loop {
+        if command == BackendCommand::Rerun {
+            let info = run(&args.command).unwrap();
+            send(&mut *backend, &Sendable::CommandInfo(info)).await;
         }
 
-        let command = backend.recieve().await.unwrap();
-        match command {
+        command = backend.recieve().await.unwrap();
+        match &command {
             BackendCommand::Rerun => continue,
-            BackendCommand::Done => return,
-            BackendCommand::UnkownCommand(_) => return,
+            BackendCommand::Done => {
+                send(&mut *backend, &Sendable::Raw("Done!".to_string())).await;
+                return;
+            }
+            BackendCommand::UnkownCommand(s) => {
+                send(
+                    &mut *backend,
+                    &Sendable::Raw(format!("Unkown command: {}", s)),
+                )
+                .await
+            }
+            BackendCommand::Cat => {
+                send(
+                    &mut *backend,
+                    &Sendable::Image((mime::IMAGE_JPEG, cat.clone())),
+                )
+                .await
+            }
         }
     }
 }

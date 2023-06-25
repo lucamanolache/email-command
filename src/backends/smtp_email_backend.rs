@@ -18,9 +18,8 @@ use regex::Regex;
 use tokio::net::TcpStream;
 use tokio::time::sleep;
 
-use super::backend::{Backend, BackendCommand, BackendError};
+use super::backend::{Backend, BackendCommand, BackendError, Sendable};
 use crate::config::EmailConfig;
-use crate::runner::CommandInfo;
 
 pub struct SmtpEmailBackend {
     config: EmailConfig,
@@ -222,7 +221,25 @@ impl Backend for SmtpEmailBackend {
         ))
     }
 
-    async fn send_text(&mut self, info: &CommandInfo) -> Result<(), BackendError> {
+    async fn send_text(&mut self, info: &Sendable) -> Result<(), BackendError> {
+        let subject = match info {
+            Sendable::CommandInfo(info) => {
+                format!(
+                    "Command \"{}\" finished in {}",
+                    info.command,
+                    info.time.as_secs_f64()
+                )
+            }
+            Sendable::Raw(info) => format!("Raw message: {}", info),
+            _ => unimplemented!(),
+        };
+        let body = match info {
+            Sendable::CommandInfo(info) => {
+                format!("STDOUT:\n{}\n\nSTDERR:\n{}", info.stdout, info.stderr)
+            }
+            Sendable::Raw(info) => info.to_string(),
+            _ => unimplemented!(),
+        };
         let email = Message::builder()
             .from(match self.config.username.parse() {
                 Ok(user) => user,
@@ -242,15 +259,8 @@ impl Backend for SmtpEmailBackend {
                     )))
                 }
             })
-            .subject(format!(
-                "Command \"{}\" finished in {}",
-                info.command,
-                info.time.as_secs_f64()
-            ))
-            .body(format!(
-                "STDOUT:\n{}\n\nSTDERR:\n{}",
-                info.stdout, info.stderr
-            ));
+            .subject(subject)
+            .body(body);
         let email = match email {
             Ok(email) => email,
             Err(_) => return Err(BackendError::Unknown("Failed to generate email".into())),

@@ -888,9 +888,11 @@ dependencies = [
  "log",
  "mail-parser",
  "matrix-sdk",
+ "mime",
  "pretty_env_logger",
  "regex",
  "serde",
+ "serde_json",
  "teloxide",
  "thiserror",
  "tokio",
@@ -2211,6 +2213,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "pulldown-cmark"
+version = "0.9.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77a1a2f1f0a7ecff9c31abbe177637be0e97a0aef46cf8738ece09327985d998"
+dependencies = [
+ "bitflags",
+ "memchr",
+ "unicase",
+]
+
+[[package]]
 name = "quote"
 version = "0.6.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2552,6 +2565,7 @@ dependencies = [
  "js_int",
  "js_option",
  "percent-encoding",
+ "pulldown-cmark",
  "rand 0.8.5",
  "regex",
  "ruma-identifiers-validation",
