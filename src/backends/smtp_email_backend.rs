@@ -128,6 +128,7 @@ impl SmtpEmailBackend {
 #[async_trait]
 impl Backend for SmtpEmailBackend {
     async fn recieve(&mut self) -> Result<BackendCommand, BackendError> {
+        // TODO: stop loop
         let messages = loop {
             let new = self
                 .imap

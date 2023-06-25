@@ -1,5 +1,8 @@
+use backends::matrix_backend::MatrixBackend;
 use clap::Parser;
 use std::fs;
+use std::time::Duration;
+use tokio::time::sleep;
 
 use backends::backend::{Backend, BackendCommand, BackendList};
 use backends::smtp_email_backend::SmtpEmailBackend;
@@ -28,12 +31,17 @@ struct Args {
 
 async fn get_backend(backend: &BackendList, config: Config) -> Box<dyn Backend> {
     match backend {
+        BackendList::Matrix => Box::new(
+            MatrixBackend::new(config.matrix.expect("Missing matrix section in config!"))
+                .await
+                .expect("Failed to create matrix backend!"),
+        ),
         BackendList::Email => Box::new(
             SmtpEmailBackend::new(config.email.expect("Missing email section in config!"))
                 .await
                 .expect("Failed to create email backend!"),
         ),
-        _ => panic!("Unknown backend!"),
+        _ => unimplemented!(),
     }
 }
 
@@ -52,8 +60,16 @@ async fn main() {
         let info = run(&args.command).unwrap();
 
         match backend.send_text(&info).await {
-            Ok(_) => println!("email sent"),
-            Err(err) => println!("failed to send email alert: {}", err),
+            Ok(_) => println!("Sent"),
+            Err(err) => {
+                eprintln!("Failed to send email with:\n{}", err);
+                println!("Trying again in 30s");
+                sleep(Duration::from_secs(30)).await;
+                match backend.send_text(&info).await {
+                    Ok(_) => println!("Sent"),
+                    Err(err) => panic!("Can't send results with:\n{}", err),
+                }
+            }
         }
 
         let command = backend.recieve().await.unwrap();

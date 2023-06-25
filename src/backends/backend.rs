@@ -42,6 +42,7 @@ pub trait Backend {
 #[derive(Clone, Debug)]
 pub enum BackendList {
     Email,
+    Matrix,
 }
 
 impl FromStr for BackendList {
@@ -50,6 +51,7 @@ impl FromStr for BackendList {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "email" => Ok(Self::Email),
+            "matrix" => Ok(Self::Matrix),
             _ => Err(ParseError),
         }
     }

@@ -18,6 +18,7 @@ pub struct EmailConfig {
 
 #[derive(Deserialize)]
 pub struct MatrixConfig {
-    pub token: String,
     pub address: String,
+    pub username: String,
+    pub password: String,
 }
