@@ -130,8 +130,11 @@ impl Backend for MatrixBackend {
                 let content = RoomMessageEventContent::text_markdown(s.to_string());
                 self.room.send(content, None).await
             }
-            Sendable::Image((mime, data)) => {
-                self.room.send_attachment("cat", mime, data, AttachmentConfig::new()).await
+            Sendable::Image((mime, name,  data)) => {
+                self.room.send_attachment(name, mime, data, AttachmentConfig::new()).await
+            }
+            Sendable::File((mime, name,  data)) => {
+                self.room.send_attachment(name, mime, data, AttachmentConfig::new()).await
             }
             _ => {
                 unimplemented!()

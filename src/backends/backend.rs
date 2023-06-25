@@ -30,7 +30,8 @@ impl Display for ParseError {
 pub enum Sendable {
     Raw(String),
     CommandInfo(CommandInfo),
-    Image((Mime, Vec<u8>)),
+    Image((Mime, String, Vec<u8>)),
+    File((Mime, String, Vec<u8>)),
 }
 
 #[derive(PartialEq)]

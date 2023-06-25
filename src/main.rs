@@ -25,6 +25,9 @@ struct Args {
     #[arg(short = 'b', long = "backend")]
     backend: BackendList,
 
+    #[arg(short = 'f', long = "file")]
+    files: Option<Vec<String>>,
+
     #[arg()]
     command: String,
 }
@@ -79,6 +82,30 @@ async fn main() {
         if command == BackendCommand::Rerun {
             let info = run(&args.command).unwrap();
             send(&mut *backend, &Sendable::CommandInfo(info)).await;
+            if args.files.is_some() {
+                for name in args.files.as_ref().expect("Something impossible happened") {
+                    let file = fs::read(name).expect(&format!("File {name} doesn't exist"));
+
+                    let parts: Vec<&str> = name.split('.').collect();
+                    let res = match parts.last() {
+                        Some(v) => match *v {
+                            "png" => mime::IMAGE_PNG,
+                            "jpg" => mime::IMAGE_JPEG,
+                            "jpeg" => mime::IMAGE_JPEG,
+                            "json" => mime::APPLICATION_JSON,
+                            "csv" => mime::TEXT_CSV,
+                            &_ => mime::TEXT_PLAIN,
+                        },
+                        None => mime::TEXT_PLAIN,
+                    };
+
+                    send(
+                        &mut *backend,
+                        &Sendable::Image((res, name.to_string(), file)),
+                    )
+                    .await;
+                }
+            }
         }
 
         command = backend.recieve().await.unwrap();
@@ -98,7 +125,7 @@ async fn main() {
             BackendCommand::Cat => {
                 send(
                     &mut *backend,
-                    &Sendable::Image((mime::IMAGE_JPEG, cat.clone())),
+                    &Sendable::Image((mime::IMAGE_JPEG, "cat".to_string(), cat.clone())),
                 )
                 .await
             }
